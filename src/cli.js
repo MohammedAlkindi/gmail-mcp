@@ -25,7 +25,8 @@ function readSecret(prompt) {
       done = true;
       cleanup();
       process.stdout.write('\n');
-      resolve(data.replace(/\x1b\[\d*~/g, '').split(/\r?\n/)[0].trim());
+      const clean = data.replace(/\x1b\[\d*~/g, '');
+      resolve((tty ? clean.split(/\r?\n/)[0] : clean).trim());
     };
     const onData = (chunk) => {
       for (const ch of chunk.toString('utf8')) {
