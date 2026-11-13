@@ -60,7 +60,11 @@ async function fullMessage(m, entry) {
   let attachments = [];
   if (m.source) {
     const parsed = await simpleParser(m.source, { skipImageLinks: true, skipTextLinks: true });
-    text = parsed.text || htmlToText(parsed.html) || '';
+    // Many senders ship a stub text/plain part next to the real HTML; take the plain part only
+    // when it carries at least half as much as the HTML does.
+    const plain = (parsed.text || '').trim();
+    const fromHtml = htmlToText(parsed.html);
+    text = plain.length >= fromHtml.length / 2 ? plain : fromHtml || plain;
     attachments = (parsed.attachments || []).map((a) => ({ filename: a.filename, content_type: a.contentType, size: a.size }));
   }
   return { ...base, message_id_header: m.envelope?.messageId, text, attachments, truncated: (m.size || 0) > SOURCE_CAP };
