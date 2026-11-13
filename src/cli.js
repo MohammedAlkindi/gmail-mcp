@@ -7,21 +7,38 @@ import * as mail from './mail.js';
 
 const [cmd, ...rest] = process.argv.slice(2);
 
+// Reads one line without echo. readline's muted-output trick clears the prompt line on a
+// real console, so raw mode is handled by hand here.
 function readSecret(prompt) {
   return new Promise((resolve) => {
     const tty = Boolean(process.stdin.isTTY);
-    process.stdout.write(`${prompt}${tty ? ' (typing is hidden)' : ' (typing is visible here)'}: `);
-    if (!tty) {
-      let data = '';
-      const finish = () => resolve(data.split(/\r?\n/)[0].trim());
-      process.stdin.setEncoding('utf8');
-      process.stdin.on('data', (d) => { data += d; if (data.includes('\n')) { process.stdin.pause(); finish(); } });
-      process.stdin.on('end', finish);
-      return;
-    }
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-    rl._writeToOutput = () => {}; // no echo
-    rl.question('', (ans) => { rl.close(); process.stdout.write('\n'); resolve(ans.trim()); });
+    process.stdout.write(`${prompt}${tty ? ' (typing is hidden, press Enter when done)' : ''}: `);
+    let data = '';
+    let done = false;
+    const cleanup = () => {
+      process.stdin.removeListener('data', onData);
+      if (tty) process.stdin.setRawMode(false);
+      process.stdin.pause();
+    };
+    const finish = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      process.stdout.write('\n');
+      resolve(data.replace(/\x1b\[\d*~/g, '').split(/\r?\n/)[0].trim());
+    };
+    const onData = (chunk) => {
+      for (const ch of chunk.toString('utf8')) {
+        if (ch === '\u0003') { cleanup(); process.stdout.write('\n'); process.exit(130); }
+        if (ch === '\r' || ch === '\n') return finish();
+        if (ch === '\u007f' || ch === '\b') { data = data.slice(0, -1); continue; }
+        data += ch;
+      }
+    };
+    if (tty) process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.on('data', onData);
+    process.stdin.on('end', finish);
   });
 }
 
