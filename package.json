@@ -1,0 +1,24 @@
+{
+  "name": "gmail-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-account Gmail MCP server over IMAP and SMTP with app passwords",
+  "type": "module",
+  "bin": {
+    "gmail-mcp": "src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "imapflow": "^2.11.0",
+    "mailparser": "^3.14.3",
+    "nodemailer": "^10.5.0",
+    "zod": "^4.6.7"
+  }
+}
