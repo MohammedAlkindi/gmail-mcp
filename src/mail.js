@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 import { simpleParser } from 'mailparser';
-import { getClient, getPassword } from './accounts.js';
+import { getClient, smtpAuth } from './accounts.js';
 import { addr, gmailLabel, humanLabel, htmlToText, messageIdList, parseHeaders, replySubject, stripSelf, webLink } from './util.js';
 
 const SOURCE_CAP = 1_500_000; // bytes of raw message fetched for body text; attachments past this are listed, not read
@@ -133,7 +133,7 @@ export async function sendEmail(alias, args) {
   const mail = await buildMail(entry, args);
   const transport = nodemailer.createTransport({
     host: 'smtp.gmail.com', port: 465, secure: true,
-    auth: { user: entry.email, pass: getPassword(entry.alias) },
+    auth: await smtpAuth(entry.alias),
   });
   const info = await transport.sendMail(mail);
   transport.close();

@@ -1,14 +1,35 @@
 import { ImapFlow } from 'imapflow';
 import { loadConfig, unprotect } from './config.js';
+import { hasOAuth, accessTokenFor } from './oauth.js';
 
 const clients = new Map();
 const passwords = new Map();
 
+export function authKind(a) {
+  if (hasOAuth(a)) return 'oauth';
+  if (a?.password_enc) return 'app_password';
+  return 'none';
+}
+
 export function listAccounts() {
   const cfg = loadConfig();
   return Object.entries(cfg.accounts).map(([alias, a]) => ({
-    alias, email: a.email, has_password: Boolean(a.password_enc), web_index: a.web_index,
+    alias, email: a.email, auth: authKind(a), web_index: a.web_index,
   }));
+}
+
+// Credentials for the IMAP and SMTP libraries: an OAuth access token when the account has a
+// grant, otherwise the stored app password.
+export async function imapAuth(alias) {
+  const a = loadConfig().accounts[alias];
+  if (hasOAuth(a)) return { user: a.email, accessToken: await accessTokenFor(alias) };
+  return { user: a.email, pass: getPassword(alias) };
+}
+
+export async function smtpAuth(alias) {
+  const a = loadConfig().accounts[alias];
+  if (hasOAuth(a)) return { type: 'OAuth2', user: a.email, accessToken: await accessTokenFor(alias) };
+  return { user: a.email, pass: getPassword(alias) };
 }
 
 export function resolveAlias(alias) {
@@ -39,7 +60,7 @@ export async function getClient(alias) {
   const a = loadConfig().accounts[alias];
   const client = new ImapFlow({
     host: 'imap.gmail.com', port: 993, secure: true,
-    auth: { user: a.email, pass: getPassword(alias) },
+    auth: await imapAuth(alias),
     logger: false,
     clientInfo: { name: 'gmail-mcp', vendor: 'local' },
   });

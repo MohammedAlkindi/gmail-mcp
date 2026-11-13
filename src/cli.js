@@ -2,18 +2,23 @@
 import readline from 'node:readline';
 import { loadConfig, saveConfig, protect, HOME } from './config.js';
 import { listAccounts, getClient, closeAll } from './accounts.js';
+import * as oauth from './oauth.js';
 import * as mail from './mail.js';
 
 const [cmd, ...rest] = process.argv.slice(2);
 
 function readSecret(prompt) {
   return new Promise((resolve) => {
-    if (!process.stdin.isTTY) {
+    const tty = Boolean(process.stdin.isTTY);
+    process.stdout.write(`${prompt}${tty ? ' (typing is hidden)' : ' (typing is visible here)'}: `);
+    if (!tty) {
       let data = '';
-      process.stdin.setEncoding('utf8').on('data', (d) => { data += d; }).on('end', () => resolve(data.trim()));
+      const finish = () => resolve(data.split(/\r?\n/)[0].trim());
+      process.stdin.setEncoding('utf8');
+      process.stdin.on('data', (d) => { data += d; if (data.includes('\n')) { process.stdin.pause(); finish(); } });
+      process.stdin.on('end', finish);
       return;
     }
-    process.stdout.write(prompt);
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
     rl._writeToOutput = () => {}; // no echo
     rl.question('', (ans) => { rl.close(); process.stdout.write('\n'); resolve(ans.trim()); });
@@ -22,7 +27,9 @@ function readSecret(prompt) {
 
 const usage = `gmail-mcp CLI (config in ${HOME})
   add <alias> <email> [web_index]   register an account (web_index = N in mail.google.com/mail/u/N)
-  set-password <alias>              store the Gmail app password (prompted, not echoed; or piped on stdin)
+  set-password <alias>              store the Gmail app password (prompted; or piped on stdin)
+  oauth-client <alias> <client_id>  store a Google OAuth desktop client (secret prompted; or piped on stdin)
+  oauth-login <alias>               print the consent URL, wait for the browser, store the refresh token
   remove <alias>
   list
   test <alias>                      connect over IMAP and show folder counts
@@ -43,12 +50,28 @@ async function main() {
     case 'set-password': {
       const [alias] = rest;
       if (!cfg.accounts[alias]) throw new Error(`unknown alias ${alias}. ${usage}`);
-      const raw = await readSecret(`App password for ${cfg.accounts[alias].email}: `);
+      const raw = await readSecret(`App password for ${cfg.accounts[alias].email}`);
       const pw = raw.replace(/\s+/g, '');
       if (pw.length < 16) throw new Error('that does not look like a 16-character Gmail app password');
       cfg.accounts[alias].password_enc = protect(pw);
       saveConfig(cfg);
       console.log(`stored (DPAPI-protected) for ${alias}`);
+      break;
+    }
+    case 'oauth-client': {
+      const [alias, clientId] = rest;
+      if (!cfg.accounts[alias] || !clientId) throw new Error(usage);
+      const secret = await readSecret(`OAuth client secret for ${cfg.accounts[alias].email}`);
+      if (!secret) throw new Error('empty client secret');
+      oauth.setClient(alias, clientId, secret);
+      console.log(`stored OAuth client for ${alias}; next: node src/cli.js oauth-login ${alias}`);
+      break;
+    }
+    case 'oauth-login': {
+      const [alias] = rest;
+      if (!cfg.accounts[alias]) throw new Error(usage);
+      const email = await oauth.login(alias);
+      console.log(`stored refresh token for ${alias} (${email})`);
       break;
     }
     case 'remove': {
